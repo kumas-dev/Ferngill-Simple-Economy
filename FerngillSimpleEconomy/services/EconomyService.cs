@@ -248,7 +248,15 @@ public class EconomyService(
 	{
 		return Economy.CategoryEconomies
 			.Where(pair => pair.Value.Values.Count > 0)
-			.ToDictionary(pair => pair.Key, pair => new Object(pair.Value.Values.First().ObjectId, 1).getCategoryName());
+			.ToDictionary(pair => pair.Key, pair => GetCategoryName(pair.Value.Values.First()));
+	}
+
+	private string GetCategoryName(ItemModel item)
+	{
+		var categoryName = new Object(item.ObjectId, 1).getCategoryName();
+		return string.IsNullOrWhiteSpace(categoryName)
+			? modHelper.Translation?.Get("fse.config.other").ToString() ?? "Other"
+			: categoryName.Trim();
 	}
 
 	public ItemModel[] GetItemsForCategory(int category)

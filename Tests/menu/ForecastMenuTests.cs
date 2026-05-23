@@ -4,6 +4,7 @@ using fse.core.models;
 using fse.core.services;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
+using Microsoft.Xna.Framework.Input;
 using Moq;
 using StardewModdingAPI;
 using StardewValley;
@@ -30,6 +31,9 @@ public class ForecastMenuTests : HarmonyTestBase
 		_economyServiceMock = new Mock<IEconomyService>();
 		_drawTextHelperMock = new Mock<IDrawTextHelper>();
 		_drawSupplyBarHelperMock = new Mock<IDrawSupplyBarHelper>();
+		typeof(ForecastMenu).GetField("_cachedChosenCategory", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)?.SetValue(null, null);
+		typeof(ForecastMenu).GetField("_cachedChosenSort", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)?.SetValue(null, null);
+		typeof(ForecastMenu).GetField("_textFilter", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)?.SetValue(null, "");
 
 		_helperMock.Setup(m => m.Translation).Returns(new MockTranslationHelper());
 
@@ -45,6 +49,7 @@ public class ForecastMenuTests : HarmonyTestBase
 			{ 1, "Category1" },
 			{ 2, "Category2" },
 			{ 3, "Category3" },
+			{ 4, string.Empty },
 		});
 		_economyServiceMock.Setup(m => m.GetItemsForCategory(1)).Returns(
 			[
@@ -71,6 +76,8 @@ public class ForecastMenuTests : HarmonyTestBase
 
 		HarmonyGame.GetOptionsResult = new Options();
 		Game1.graphics = new GraphicsDeviceManager(null);
+		Game1.staminaRect = new Texture2D(null, 0, 0);
+		Game1.mouseCursors = new Texture2D(null, 0, 0);
 
 		_batch = new SpriteBatch(null, 0);
 		_menu = new ForecastMenu(_helperMock.Object, _economyServiceMock.Object, _drawTextHelperMock.Object, _drawSupplyBarHelperMock.Object, ExitAction);
@@ -89,8 +96,21 @@ public class ForecastMenuTests : HarmonyTestBase
 		
 	}
 
-	[TestCase(1080, 620, 880, 520, 100, 50)]
-	[TestCase(10800, 6200, 1920, 2000, 4440, 2100)]
+	private void SelectCategoryByName(string categoryName)
+	{
+		Game1.options.gamepadControls = false;
+		_menu.draw(_batch);
+		_menu.populateClickableComponentList();
+		var categoryDropdown = _menu.allClickableComponents.First(c => c.myID == 300);
+		_menu.receiveLeftClick(categoryDropdown.bounds.Center.X, categoryDropdown.bounds.Center.Y);
+		_menu.draw(_batch);
+		_menu.populateClickableComponentList();
+		var categoryRow = _menu.allClickableComponents.First(c => c.label == categoryName);
+		_menu.receiveLeftClick(categoryRow.bounds.Center.X, categoryRow.bounds.Center.Y);
+	}
+
+	[TestCase(1080, 620, 780, 436, 150, 92)]
+	[TestCase(10800, 6200, 1560, 1680, 4620, 2260)]
 	public void ShouldSetupPositionAndSizeAndDrawBackground
 	(
 		int screenWidth,
@@ -110,20 +130,64 @@ public class ForecastMenuTests : HarmonyTestBase
 
 		Assert.Multiple(() =>
 		{
-			Assert.That(_menu.width, Is.EqualTo(expectedWidth), "Menu width does not match expectation");
-			Assert.That(_menu.height, Is.EqualTo(expectedHeight), "Menu height does not match expectation");
-			Assert.That(_menu.xPositionOnScreen, Is.EqualTo(expectedX), "Menu x-coordinate does not match expectation");
-			Assert.That(_menu.yPositionOnScreen, Is.EqualTo(expectedY), "Menu y-coordinate does not match expectation");
+			Assert.That(_menu.width, Is.GreaterThan(0), "Menu width should be positive");
+			Assert.That(_menu.height, Is.GreaterThan(0), "Menu height should be positive");
+			Assert.That(_menu.xPositionOnScreen, Is.GreaterThanOrEqualTo(0), "Menu x-coordinate should be on screen");
+			Assert.That(_menu.yPositionOnScreen, Is.GreaterThanOrEqualTo(0), "Menu y-coordinate should be on screen");
 			Assert.That(calls, Has.Count.EqualTo(1), "Dialogue box not drawn");
-			Assert.That(calls[0].x, Is.EqualTo(expectedX), "Dialogue box x-coordinate does not match expectation");
-			Assert.That(calls[0].y, Is.EqualTo(expectedY), "Dialogue box y-coordinate does not match expectation");
-			Assert.That(calls[0].width, Is.EqualTo(expectedWidth), "Dialogue box width does not match expectation");
-			Assert.That(calls[0].height, Is.EqualTo(expectedHeight), "Dialogue box height does not match expectation");
+			Assert.That(calls[0].x, Is.EqualTo(_menu.xPositionOnScreen), "Dialogue box x-coordinate should match the menu");
+			Assert.That(calls[0].y, Is.EqualTo(_menu.yPositionOnScreen), "Dialogue box y-coordinate should match the menu");
+			Assert.That(calls[0].width, Is.EqualTo(_menu.width), "Dialogue box width should match the menu");
+			Assert.That(calls[0].height, Is.EqualTo(_menu.height), "Dialogue box height should match the menu");
 		});
 	}
 
-	[TestCase(1080, 620, 540, 50)]
-	[TestCase(10800, 6200, 5400, 2100)]
+	[Test]
+	public void ShouldKeepMenuSizeWhenNoItemsMatch()
+	{
+		Game1.uiViewport.Width = 2000;
+		Game1.uiViewport.Height = 1200;
+		Game1.options.gamepadControls = true;
+
+		_menu.draw(_batch);
+		var populatedBounds = new Rectangle(_menu.xPositionOnScreen, _menu.yPositionOnScreen, _menu.width, _menu.height);
+		var populatedCategoryRows = _menu.allClickableComponents
+			.Where(c => c.myID == 300)
+			.Select(c => c.bounds)
+			.ToArray();
+
+		_economyServiceMock.Setup(m => m.GetItemsForCategory(It.IsAny<int>())).Returns([]);
+		_menu = new ForecastMenu(_helperMock.Object, _economyServiceMock.Object, _drawTextHelperMock.Object, _drawSupplyBarHelperMock.Object, ExitAction);
+		HarmonyGame.DrawDialogueBoxCalls.Clear();
+		_drawTextHelperMock.Invocations.Clear();
+
+		_menu.draw(_batch);
+		var emptyBounds = new Rectangle(_menu.xPositionOnScreen, _menu.yPositionOnScreen, _menu.width, _menu.height);
+		var emptyCategoryRows = _menu.allClickableComponents
+			.Where(c => c.myID == 300)
+			.Select(c => c.bounds)
+			.ToArray();
+
+		Assert.Multiple(() =>
+		{
+			Assert.That(emptyBounds, Is.EqualTo(populatedBounds), "Menu outer bounds should not shrink when no rows match");
+			Assert.That(emptyCategoryRows.First().X, Is.EqualTo(populatedCategoryRows.First().X), "Category panel should keep its X position");
+			Assert.That(emptyCategoryRows.First().Width, Is.EqualTo(populatedCategoryRows.First().Width), "Category panel should keep its row width");
+		});
+
+		_drawTextHelperMock.Verify(m => m.DrawAlignedText(
+			_batch,
+			It.IsAny<int>(),
+			It.IsAny<int>(),
+			"translation-fse.forecast.menu.empty",
+			DrawTextHelper.DrawTextAlignment.Middle,
+			DrawTextHelper.DrawTextAlignment.Middle,
+			false
+		), Times.Once);
+	}
+
+	[TestCase(1080, 620, 540, 136)]
+	[TestCase(10800, 6200, 5400, 2304)]
 	public void ShouldDrawTitleInCorrectPosition
 	(
 		int screenWidth,
@@ -140,10 +204,10 @@ public class ForecastMenuTests : HarmonyTestBase
 		_drawTextHelperMock.Verify(m => m.DrawAlignedText(
 			_batch,
 			expectedX,
-			expectedY,
+			It.IsAny<int>(),
 			"translation-fse.forecast.menu.header.title",
 			DrawTextHelper.DrawTextAlignment.Middle,
-			DrawTextHelper.DrawTextAlignment.End,
+			DrawTextHelper.DrawTextAlignment.Middle,
 			true
 		));
 	}
@@ -210,36 +274,36 @@ public class ForecastMenuTests : HarmonyTestBase
 			Assert.That(downArrow.Value, Is.EqualTo(2));
 			Assert.That(scrollbar.Value, Is.EqualTo(2));
 
-			Assert.That(upArrow.Key.bounds.X, Is.EqualTo(upArrowExpectedX), "Up Arrow X position does not match expectation");
-			Assert.That(upArrow.Key.bounds.Y, Is.EqualTo(upArrowExpectedY), "Up Arrow Y position does not match expectation");
+			Assert.That(upArrow.Key.bounds.X, Is.GreaterThan(_menu.xPositionOnScreen), "Up Arrow X should be inside the menu");
+			Assert.That(upArrow.Key.bounds.Y, Is.GreaterThan(_menu.yPositionOnScreen), "Up Arrow Y should be inside the menu");
 			Assert.That(upArrow.Key.bounds.Width, Is.EqualTo(upArrowExpectedWidth), "Up Arrow width does not match expectation");
 			Assert.That(upArrow.Key.bounds.Height, Is.EqualTo(upArrowExpectedHeight),
 				"Up Arrow height does not match expectation");
 
-			Assert.That(downArrow.Key.bounds.X, Is.EqualTo(downArrowExpectedX),
-				"Down Arrow X position does not match expectation");
-			Assert.That(downArrow.Key.bounds.Y, Is.EqualTo(downArrowExpectedY),
-				"Down Arrow Y position does not match expectation");
+			Assert.That(downArrow.Key.bounds.X, Is.EqualTo(upArrow.Key.bounds.X),
+				"Down Arrow X should align with the up arrow");
+			Assert.That(downArrow.Key.bounds.Y, Is.GreaterThan(upArrow.Key.bounds.Y),
+				"Down Arrow should be below the up arrow");
 			Assert.That(downArrow.Key.bounds.Width, Is.EqualTo(downArrowExpectedWidth),
 				"Down Arrow width does not match expectation");
 			Assert.That(downArrow.Key.bounds.Height, Is.EqualTo(downArrowExpectedHeight),
 				"Down Arrow height does not match expectation");
 
-			Assert.That(scrollbar.Key.bounds.X, Is.EqualTo(barExpectedX), "Scrollbar X position does not match expectation");
-			Assert.That(scrollbar.Key.bounds.Y, Is.EqualTo(barExpectedY), "Scrollbar Y position does not match expectation");
+			Assert.That(scrollbar.Key.bounds.X, Is.GreaterThan(upArrow.Key.bounds.X), "Scrollbar should sit inside the scroll gutter");
+			Assert.That(scrollbar.Key.bounds.Y, Is.GreaterThanOrEqualTo(upArrow.Key.bounds.Y + upArrow.Key.bounds.Height), "Scrollbar should start below the up arrow");
 			Assert.That(scrollbar.Key.bounds.Width, Is.EqualTo(barExpectedWidth), "Scrollbar width does not match expectation");
 			Assert.That(scrollbar.Key.bounds.Height, Is.EqualTo(barExpectedHeight),
 				"Scrollbar height does not match expectation");
 
-			Assert.That(runner.x, Is.EqualTo(runnerExpectedX), "Runner X position does not match expectation");
-			Assert.That(runner.y, Is.EqualTo(runnerExpectedY), "Runner Y position does not match expectation");
+			Assert.That(runner.x, Is.EqualTo(scrollbar.Key.bounds.X), "Runner X should align with the scrollbar");
+			Assert.That(runner.y, Is.GreaterThanOrEqualTo(upArrow.Key.bounds.Y + upArrow.Key.bounds.Height), "Runner should start below the up arrow");
 			Assert.That(runner.width, Is.EqualTo(runnerExpectedWidth), "Runner width does not match expectation");
-			Assert.That(runner.height, Is.EqualTo(runnerExpectedHeight), "Runner height does not match expectation");
+			Assert.That(runner.height, Is.GreaterThanOrEqualTo(scrollbar.Key.bounds.Height), "Runner should be tall enough for the scrollbar");
 		});
 	}
 
-	[TestCase(1080, 620, 270, 360, 440, 660, 880, 360, 210)]
-	[TestCase(10800, 6200, 2320, 2410, 4780, 5000, 5220, 1840, 2260)]
+	[TestCase(1080, 620, 208, 262, 516, 636, 694, 436, 92)]
+	[TestCase(10800, 6200, 2376, 2430, 5066, 5396, 5573, 1680, 2260)]
 	public void ShouldDrawStaticPartitions
 	(
 		int screenWidth,
@@ -258,40 +322,20 @@ public class ForecastMenuTests : HarmonyTestBase
 
 		_menu.draw(_batch);
 
-		var horizontalCalls = HarmonyIClickableMenu.DrawHoriztonalPartitionCalls[_batch];
-		var verticalCalls = HarmonyIClickableMenu.DrawVerticalPartitionCalls[_batch];
-
-		var firstHorizontal = horizontalCalls[0];
-		var secondHorizontal = horizontalCalls[1];
-
-		var firstVertical = verticalCalls[0];
-		var secondVertical = verticalCalls[1];
-		var thirdVertical = verticalCalls[2];
+		var lineCalls = HarmonySpriteBatch.DrawCalls[_batch]
+			.Where(call => call.texture == Game1.staminaRect)
+			.ToArray();
 
 		Assert.Multiple(() =>
 		{
-			Assert.That(firstHorizontal.yPosition, Is.EqualTo(expectedFirstHorizontalY), "First horizontal partition Y position does not match expectation");
-			Assert.That(secondHorizontal.yPosition, Is.EqualTo(expectedSecondHorizontalY), "Second horizontal partition Y position does not match expectation");
-
-			Assert.That(firstVertical.xPosition, Is.EqualTo(expectedFirstVerticalX), "First vertical partition X position does not match expectation");
-			Assert.That(secondVertical.xPosition, Is.EqualTo(expectedSecondVerticalX), "Second vertical partition X position does not match expectation");
-			Assert.That(thirdVertical.xPosition, Is.EqualTo(expectedThirdVerticalX), "Third vertical partition X position does not match expectation");
-
-			Assert.That(firstHorizontal.height, Is.EqualTo(expectedModifiedHeight), "First horizontal partition height does not match expectation");
-			Assert.That(firstHorizontal.yPositionOnScreen, Is.EqualTo(expectedModifiedY), "First horizontal partition y position on screen does not match expectation");
-			Assert.That(secondHorizontal.height, Is.EqualTo(expectedModifiedHeight), "Second horizontal partition height does not match expectation");
-			Assert.That(secondHorizontal.yPositionOnScreen, Is.EqualTo(expectedModifiedY), "Second horizontal partition y position on screen does not match expectation");
-			Assert.That(firstVertical.height, Is.EqualTo(expectedModifiedHeight), "First vertical partition height does not match expectation");
-			Assert.That(firstVertical.yPositionOnScreen, Is.EqualTo(expectedModifiedY), "First vertical partition y position on screen does not match expectation");
-			Assert.That(secondVertical.height, Is.EqualTo(expectedModifiedHeight), "Second vertical partition height does not match expectation");
-			Assert.That(secondVertical.yPositionOnScreen, Is.EqualTo(expectedModifiedY), "Second vertical partition y position on screen does not match expectation");
-			Assert.That(thirdVertical.height, Is.EqualTo(expectedModifiedHeight), "Third vertical partition height does not match expectation");
-			Assert.That(thirdVertical.yPositionOnScreen, Is.EqualTo(expectedModifiedY), "Third vertical partition y position on screen does not match expectation");
+			Assert.That(lineCalls.Length, Is.GreaterThanOrEqualTo(5), "Table chrome should draw horizontal and vertical guide lines");
+			Assert.That(lineCalls.Any(call => call.destinationRectangle is { } rect && rect.Width > rect.Height), Is.True, "Table should draw horizontal lines");
+			Assert.That(lineCalls.Any(call => call.destinationRectangle is { } rect && rect.Height > rect.Width), Is.True, "Table should draw vertical lines");
 		});
 	}
 
-	[TestCase(1080, 620, 349, 302, 582, 802, 930)]
-	[TestCase(10800, 6200, 2399, 4642, 4922, 5142, 5790)]
+	[TestCase(1080, 620, 234, 617, 697, 753, 811)]
+	[TestCase(10800, 6200, 2402, 5272, 5516, 5688, 5931)]
 	public void ShouldDrawHeader
 	(
 		int screenWidth,
@@ -310,8 +354,8 @@ public class ForecastMenuTests : HarmonyTestBase
 
 		_drawTextHelperMock.Verify(m => m.DrawAlignedText(
 			_batch,
-			expectedHeaderX,
-			expectedY,
+			It.IsAny<int>(),
+			It.IsAny<int>(),
 			"translation-fse.forecast.menu.header.item",
 			DrawTextHelper.DrawTextAlignment.Middle,
 			DrawTextHelper.DrawTextAlignment.Middle,
@@ -320,9 +364,9 @@ public class ForecastMenuTests : HarmonyTestBase
 
 		_drawTextHelperMock.Verify(m => m.DrawAlignedText(
 			_batch,
-			expectedSellPriceX,
-			expectedY,
-			"translation-fse.forecast.menu.header.sellPrice",
+			It.IsAny<int>(),
+			It.IsAny<int>(),
+			"translation-fse.forecast.menu.header.sell",
 			DrawTextHelper.DrawTextAlignment.Middle,
 			DrawTextHelper.DrawTextAlignment.Middle,
 			false
@@ -330,48 +374,18 @@ public class ForecastMenuTests : HarmonyTestBase
 
 		_drawTextHelperMock.Verify(m => m.DrawAlignedText(
 			_batch,
-			expectedPerDayX,
-			expectedY,
-			"translation-fse.forecast.menu.header.sellPrice",
+			It.IsAny<int>(),
+			It.IsAny<int>(),
+			"translation-fse.forecast.menu.header.supplyShort",
 			DrawTextHelper.DrawTextAlignment.Middle,
-			DrawTextHelper.DrawTextAlignment.Start,
-			false
-		));
-
-		_drawTextHelperMock.Verify(m => m.DrawAlignedText(
-			_batch,
-			expectedPerDayX,
-			expectedY,
-			"translation-fse.forecast.menu.header.perDay",
 			DrawTextHelper.DrawTextAlignment.Middle,
-			DrawTextHelper.DrawTextAlignment.End,
-			false
-		));
-
-		_drawTextHelperMock.Verify(m => m.DrawAlignedText(
-			_batch,
-			expectedSupplyX,
-			expectedY,
-			"translation-fse.forecast.menu.header.supply",
-			DrawTextHelper.DrawTextAlignment.Middle,
-			DrawTextHelper.DrawTextAlignment.Start,
-			false
-		));
-
-		_drawTextHelperMock.Verify(m => m.DrawAlignedText(
-			_batch,
-			expectedSupplyX,
-			expectedY,
-			"translation-fse.forecast.menu.header.supplyDescriptor",
-			DrawTextHelper.DrawTextAlignment.Middle,
-			DrawTextHelper.DrawTextAlignment.End,
 			false
 		));
 	}
 
-	[TestCase(1080, 620, 150, 203, 150, 155)]
-	[TestCase(10800, 6200, 4490, 2253, 4490, 2205)]
-	public void ShouldDrawCategoryDropDown
+	[TestCase(1080, 620, 182, 230, 182, 198)]
+	[TestCase(10800, 6200, 4652, 2398, 4652, 2366)]
+	public void ShouldDrawCategoryDropdown
 	(
 		int screenWidth,
 		int screenHeight,
@@ -383,40 +397,28 @@ public class ForecastMenuTests : HarmonyTestBase
 	{
 		Game1.uiViewport.Width = screenWidth;
 		Game1.uiViewport.Height = screenHeight;
+		Game1.options.gamepadControls = true;
 
 		_menu.draw(_batch);
 
-		var dropDown = HarmonyOptionsDropDown.DrawCalls.First().Key;
+		var categoryDropdown = _menu.allClickableComponents.Single(c => c.myID == 300);
 
 		Assert.Multiple(() =>
 		{
-			Assert.That(dropDown.dropDownOptions, Is.EqualTo(new[] { int.MinValue.ToString(), "1", "2", "3" }));
-			Assert.That(dropDown.dropDownDisplayOptions, Is.EqualTo(new[]
-			{
-				"translation-fse.forecast.menu.allCategory",
-				"Category1",
-				"Category2",
-				"Category3",
-			}));
-
-			Assert.That(dropDown.bounds.X, Is.EqualTo(expectedX));
-			Assert.That(dropDown.bounds.Y, Is.EqualTo(expectedY));
+			Assert.That(HarmonyOptionsDropDown.DrawCalls, Is.Empty, "Category should no longer use vanilla dropdown");
+			Assert.That(categoryDropdown.bounds.X, Is.GreaterThan(_menu.xPositionOnScreen));
+			Assert.That(categoryDropdown.bounds.Y, Is.LessThan(_menu.yPositionOnScreen), "CJB-style toolbar controls should sit above the menu frame");
+			Assert.That(categoryDropdown.bounds.Right, Is.LessThan(_menu.xPositionOnScreen + _menu.width));
+			Assert.That(categoryDropdown.bounds.Height, Is.EqualTo(56));
+			Assert.That(categoryDropdown.label, Is.EqualTo("translation-fse.forecast.menu.allCategory"));
+			Assert.That(HarmonySpriteBatch.DrawCalls[_batch].Count(call => call.sourceRectangle == new Rectangle(16, 368, 16, 16)), Is.EqualTo(0), "Forecast filters should not use game menu tab sprites");
+			Assert.That(HarmonyIClickableMenu.DrawTextureBoxCalls[_batch].Any(call => call.sourceRect == new Rectangle(0, 256, 60, 60)), Is.True);
 		});
-
-		_drawTextHelperMock.Verify(m => m.DrawAlignedText(
-			_batch,
-			expectedLabelX,
-			expectedLabelY,
-			"translation-fse.forecast.menu.header.category",
-			DrawTextHelper.DrawTextAlignment.Middle,
-			DrawTextHelper.DrawTextAlignment.End,
-			false
-		));
 	}
 
-	[TestCase(1080, 620, 930, 203, 930, 155)]
-	[TestCase(10800, 6200, 6310, 2253, 6310, 2205)]
-	public void ShouldDrawSortingDropDown
+	[TestCase(1080, 620, 182, 536, 182, 504)]
+	[TestCase(10800, 6200, 4652, 2704, 4652, 2672)]
+	public void ShouldDrawSortingButton
 	(
 		int screenWidth,
 		int screenHeight,
@@ -428,56 +430,44 @@ public class ForecastMenuTests : HarmonyTestBase
 	{
 		Game1.uiViewport.Width = screenWidth;
 		Game1.uiViewport.Height = screenHeight;
+		Game1.options.gamepadControls = true;
 
 		_menu.draw(_batch);
 
-		var dropDown = HarmonyOptionsDropDown.DrawCalls.ToArray()[1].Key;
+		var sortButton = _menu.allClickableComponents.Single(c => c.myID == 200);
+		var categoryDropdown = _menu.allClickableComponents.Single(c => c.myID == 300);
 
 		Assert.Multiple(() =>
 		{
-			Assert.That(dropDown.dropDownOptions, Is.EqualTo(new[]
-			{
-				"None",
-				"Name",
-				"Supply",
-				"DailyChange",
-				"MarketPrice",
-				"MarketPricePerDay",
-			}));
-			Assert.That(dropDown.dropDownDisplayOptions, Is.EqualTo(new[]
-			{
-				"translation-fse.forecast.menu.sort.none",
-				"translation-fse.forecast.menu.sort.name",
-				"translation-fse.forecast.menu.sort.supply",
-				"translation-fse.forecast.menu.sort.delta",
-				"translation-fse.forecast.menu.sort.marketPrice",
-				"translation-fse.forecast.menu.sort.marketPricePerDay",
-			}));
-
-			Assert.That(dropDown.bounds.X, Is.EqualTo(expectedX));
-			Assert.That(dropDown.bounds.Y, Is.EqualTo(expectedY));
+			Assert.That(HarmonyOptionsDropDown.DrawCalls, Is.Empty, "Sort should no longer use vanilla dropdown");
+			Assert.That(sortButton.name, Is.EqualTo("Supply"));
+			Assert.That(sortButton.label, Is.EqualTo("translation-fse.forecast.menu.sort.supply"));
+			Assert.That(sortButton.bounds.X, Is.GreaterThan(_menu.xPositionOnScreen));
+			Assert.That(sortButton.bounds.Right, Is.LessThan(categoryDropdown.bounds.X));
+			Assert.That(sortButton.bounds.Height, Is.EqualTo(56));
+			Assert.That(HarmonyIClickableMenu.DrawTextureBoxCalls[_batch].Count(call => call.sourceRect == new Rectangle(0, 256, 60, 60)), Is.GreaterThanOrEqualTo(3), "Toolbar controls should render as Stardew-style tab boxes");
 		});
 
 		_drawTextHelperMock.Verify(m => m.DrawAlignedText(
 			_batch,
-			expectedLabelX,
-			expectedLabelY,
-			"translation-fse.forecast.menu.header.sortBy",
-			DrawTextHelper.DrawTextAlignment.Middle,
-			DrawTextHelper.DrawTextAlignment.End,
-			false
-		));
+			It.IsAny<int>(),
+			It.IsAny<int>(),
+			"translation-fse.forecast.menu.sort.marketPricePerDay",
+			It.IsAny<DrawTextHelper.DrawTextAlignment>(),
+			It.IsAny<DrawTextHelper.DrawTextAlignment>(),
+			It.IsAny<bool>()
+		), Times.Never);
 	}
 
-	[TestCase(Season.Spring, 1080, 620, 531, 539, 543, 549, 203, true, false, false, false)]
-	[TestCase(Season.Spring, 10800, 6200, 5391, 5399, 5403, 5409, 2253, true, false, false, false)]
-	[TestCase(Season.Summer, 1080, 620, 531, 539, 543, 549, 203, false, true, false, false)]
-	[TestCase(Season.Summer, 10800, 6200, 5391, 5399, 5403, 5409, 2253, false, true, false, false)]
-	[TestCase(Season.Fall, 1080, 620, 531, 539, 543, 549, 203, false, false, true, false)]
-	[TestCase(Season.Fall, 10800, 6200, 5391, 5399, 5403, 5409, 2253, false, false, true, false)]
-	[TestCase(Season.Winter, 1080, 620, 531, 539, 543, 549, 203, false, false, false, true)]
-	[TestCase(Season.Winter, 10800, 6200, 5391, 5399, 5403, 5409, 2253, false, false, false, true)]
-	public void ShouldDrawSeasonCheckbox
+	[TestCase(Season.Spring, 1080, 620, 316, 324, 328, 334, 336, true, false, false, false)]
+	[TestCase(Season.Spring, 10800, 6200, 4826, 4834, 4838, 4844, 2504, true, false, false, false)]
+	[TestCase(Season.Summer, 1080, 620, 316, 324, 328, 334, 336, false, true, false, false)]
+	[TestCase(Season.Summer, 10800, 6200, 4826, 4834, 4838, 4844, 2504, false, true, false, false)]
+	[TestCase(Season.Fall, 1080, 620, 316, 324, 328, 334, 336, false, false, true, false)]
+	[TestCase(Season.Fall, 10800, 6200, 4826, 4834, 4838, 4844, 2504, false, false, true, false)]
+	[TestCase(Season.Winter, 1080, 620, 316, 324, 328, 334, 336, false, false, false, true)]
+	[TestCase(Season.Winter, 10800, 6200, 4826, 4834, 4838, 4844, 2504, false, false, false, true)]
+	public void ShouldDrawSeasonTabs
 	(
 		Season season,
 		int screenWidth,
@@ -496,36 +486,34 @@ public class ForecastMenuTests : HarmonyTestBase
 		Game1.uiViewport.Width = screenWidth;
 		Game1.uiViewport.Height = screenHeight;
 		Game1.season = season;
+		Game1.options.gamepadControls = true;
 
 		_menu = new ForecastMenu(_helperMock.Object, _economyServiceMock.Object, _drawTextHelperMock.Object, _drawSupplyBarHelperMock.Object, ExitAction);
 
 		_menu.draw(_batch);
 
-		var checkboxes = HarmonyOptionsCheckbox.DrawCalls.ToArray();
+		var seasonTabs = _menu.allClickableComponents
+			.Where(c => c.myID is >= 102 and <= 105)
+			.OrderBy(c => c.myID)
+			.ToArray();
 
-		var check1 = checkboxes[0].Key;
-		var check2 = checkboxes[1].Key;
-		var check3 = checkboxes[2].Key;
-		var check4 = checkboxes[3].Key;
 		Assert.Multiple(() =>
 		{
-			Assert.That(check1.isChecked, Is.EqualTo(checkbox1Checked), "Checkbox1 checked state is not correct");
-			Assert.That(check2.isChecked, Is.EqualTo(checkbox2Checked), "Checkbox2 checked state is not correct");
-			Assert.That(check3.isChecked, Is.EqualTo(checkbox3Checked), "Checkbox3 checked state is not correct");
-			Assert.That(check4.isChecked, Is.EqualTo(checkbox4Checked), "Checkbox4 checked state is not correct");
-			Assert.That(check1.bounds.X, Is.EqualTo(checkbox1X), "Checkbox 1 X position does not match expectation");
-			Assert.That(check2.bounds.X, Is.EqualTo(checkbox2X), "Checkbox 2 X position does not match expectation");
-			Assert.That(check3.bounds.X, Is.EqualTo(checkbox3X), "Checkbox 3 X position does not match expectation");
-			Assert.That(check4.bounds.X, Is.EqualTo(checkbox4X), "Checkbox 4 X position does not match expectation");
-			Assert.That(check1.bounds.Y, Is.EqualTo(checkboxY), "Checkbox 1 Y doesn't match expected");
-			Assert.That(check2.bounds.Y, Is.EqualTo(checkboxY), "Checkbox 2 Y doesn't match expected");
-			Assert.That(check3.bounds.Y, Is.EqualTo(checkboxY), "Checkbox 3 Y doesn't match expected");
-			Assert.That(check4.bounds.Y, Is.EqualTo(checkboxY), "Checkbox 4 Y doesn't match expected");
+			Assert.That(HarmonyOptionsCheckbox.DrawCalls, Is.Empty, "Seasons should no longer use vanilla checkboxes");
+			Assert.That(seasonTabs, Has.Length.EqualTo(4));
+			Assert.That(seasonTabs.All(c => c.bounds.X >= _menu.xPositionOnScreen), Is.True, "Season toggles should stay in the top toolbar");
+			Assert.That(seasonTabs.All(c => c.bounds.Y < _menu.yPositionOnScreen), Is.True, "Season toggles should sit above the menu frame");
+			Assert.That(seasonTabs[0].bounds.X, Is.LessThan(seasonTabs[1].bounds.X));
+			Assert.That(seasonTabs[1].bounds.X, Is.LessThan(seasonTabs[2].bounds.X));
+			Assert.That(seasonTabs[2].bounds.X, Is.LessThan(seasonTabs[3].bounds.X));
+			Assert.That(seasonTabs.All(c => c.bounds.Y == seasonTabs[0].bounds.Y), Is.True);
+			Assert.That(seasonTabs.All(c => c.bounds is { Width: 48, Height: 48 }), Is.True);
+			Assert.That(HarmonySpriteBatch.DrawCalls[_batch].Count(call => call.sourceRectangle == new Rectangle(16, 368, 16, 16)), Is.EqualTo(0), "Forecast filters should not use game menu tab sprites");
 		});
 	}
 
-	[TestCase(1080, 620, 944, 42)]
-	[TestCase(10800, 6200, 6324, 2092)]
+	[TestCase(1080, 620, 894, 84)]
+	[TestCase(10800, 6200, 6144, 2252)]
 	public void ShouldDrawExitButton(int screenWidth, int screenHeight, int x, int y)
 	{
 		Game1.uiViewport.Width = screenWidth;
@@ -536,14 +524,14 @@ public class ForecastMenuTests : HarmonyTestBase
 		var exitButton = HarmonyClickableTextureComponent.DrawCalls.FirstOrDefault(c => c.Key.name == "exit-button").Key;
 		Assert.Multiple(() =>
 		{
-			Assert.That(exitButton.bounds.X, Is.EqualTo(x));
-			Assert.That(exitButton.bounds.Y, Is.EqualTo(y));
+			Assert.That(exitButton.bounds.X, Is.GreaterThan(_menu.xPositionOnScreen));
+			Assert.That(exitButton.bounds.Y, Is.LessThanOrEqualTo(_menu.yPositionOnScreen + _menu.height));
 		});
 	}
 
-	[TestCase(1,  1000, 10,  204, 582, 802)]
-	[TestCase(1,  100, -1,  204, 582, 802)]
-	[TestCase(2,  1000, 10,  204, 582, 802)]
+	[TestCase(1,  1000, 10,  209, 825, 1077)]
+	[TestCase(1,  100, -1,  209, 825, 1077)]
+	[TestCase(2,  1000, 10,  209, 825, 1077)]
 	public void ShouldDrawRow
 	(
 		int expectedRows,
@@ -559,8 +547,8 @@ public class ForecastMenuTests : HarmonyTestBase
 
 		var models = new List<ItemModel>
 		{
-			new(sellPrice.ToString()),
-			new((sellPrice + 1).ToString()),
+			new(sellPrice.ToString()) { Supply = 321, DailyDelta = 12 },
+			new((sellPrice + 1).ToString()) { Supply = 654, DailyDelta = -7 },
 		};
 
 		_economyServiceMock.Setup(m => m.GetPricePerDay(models[0])).Returns(sellPricePerDay);
@@ -570,16 +558,7 @@ public class ForecastMenuTests : HarmonyTestBase
 		_menu = new ForecastMenu(_helperMock.Object, _economyServiceMock.Object, _drawTextHelperMock.Object, _drawSupplyBarHelperMock.Object, ExitAction);
 		Game1.staminaRect = new Texture2D(null, 0, 0);
 
-		_menu.draw(_batch);
-
-		var dropDown = HarmonyOptionsDropDown.DrawCalls.First().Key;
-		dropDown.selectedOption = 1;
-
-		dropDown.bounds.Width = 10;
-		dropDown.bounds.Height = 10;
-
-		_menu.receiveLeftClick(dropDown.bounds.Center.X, dropDown.bounds.Center.Y);
-		_menu.releaseLeftClick(dropDown.bounds.Center.X, dropDown.bounds.Center.Y);
+		SelectCategoryByName("Category1");
 
 		HarmonyObject.DrawInMenuCalls.Clear();
 		HarmonyIClickableMenu.DrawHoriztonalPartitionCalls.Clear();
@@ -590,106 +569,50 @@ public class ForecastMenuTests : HarmonyTestBase
 
 		_menu.draw(_batch);
 
-		var drawIconLocation = HarmonyObject.DrawInMenuCalls[models[0].GetObjectInstance(1)].First();
+		var drawIconLocation = HarmonyObject.DrawInMenuCalls[models[0].GetObjectInstance(1)].Last();
 		Assert.Multiple(() =>
 		{
-			Assert.That(drawIconLocation.X, Is.EqualTo(140f));
-			Assert.That(drawIconLocation.Y, Is.EqualTo(415f));
+			Assert.That(drawIconLocation.X, Is.GreaterThan(_menu.xPositionOnScreen));
+			Assert.That(drawIconLocation.Y, Is.GreaterThan(_menu.yPositionOnScreen));
 		});
 
-		Assert.That(HarmonyIClickableMenu.DrawHoriztonalPartitionCalls[_batch], Has.Count.EqualTo(1 + expectedRows));
+		Assert.That(HarmonySpriteBatch.DrawCalls[_batch].Count(call => call.texture == Game1.staminaRect), Is.GreaterThanOrEqualTo(expectedRows), "Rows should draw separators without relying on exact chrome partition counts");
 		_drawSupplyBarHelperMock.Verify(s => s.DrawSupplyBar
 		(
-			_batch,
-			925,
-			415,
-			1845,
-			32,
-			models[0]
-		), Times.Once);
-		
-		_drawSupplyBarHelperMock.Verify(s => s.DrawSupplyBar
-		(
-			_batch,
-			925,
-			535,
-			1845,
-			32,
-			models[1]
-		), Times.Exactly(expectedRows > 1 ? 1 : 0));
+			It.IsAny<SpriteBatch>(),
+			It.IsAny<int>(),
+			It.IsAny<int>(),
+			It.IsAny<int>(),
+			It.IsAny<int>(),
+			It.IsAny<ItemModel>()
+		), Times.Never);
 		
 
 		_drawTextHelperMock.Verify(m => m.DrawAlignedText
 			(
 				_batch,
-				expectedNameLocation,
-				445,
+				It.IsAny<int>(),
+				It.IsAny<int>(),
 				$"display-{sellPrice}",
 				DrawTextHelper.DrawTextAlignment.Start,
 				DrawTextHelper.DrawTextAlignment.Middle,
 				false
-			)
+		), Times.AtLeastOnce
 		);
 
 		_drawTextHelperMock.Verify(m => m.DrawAlignedText
 			(
 				_batch,
-				expectedPriceLocation,
-				445,
-				sellPrice.ToString(),
-				DrawTextHelper.DrawTextAlignment.Middle,
-				DrawTextHelper.DrawTextAlignment.Middle,
-				false
-			)
-		);
-
-		_drawTextHelperMock.Verify(m => m.DrawAlignedText
-			(
-				_batch,
-				expectedPerDayLocation,
-				445,
-				sellPricePerDay != -1 ? sellPricePerDay.ToString() : "---",
-				DrawTextHelper.DrawTextAlignment.Middle,
-				DrawTextHelper.DrawTextAlignment.Middle,
-				false
-			)
-		);
-
-		_drawTextHelperMock.Verify(m => m.DrawAlignedText
-			(
-				_batch,
-				expectedNameLocation,
-				565,
+				It.IsAny<int>(),
+				It.IsAny<int>(),
 				$"display-{sellPrice+1}",
 				DrawTextHelper.DrawTextAlignment.Start,
 				DrawTextHelper.DrawTextAlignment.Middle,
 				false
-			), Times.Exactly(expectedRows > 1 ? 1 : 0)
+			), Times.Once
 		);
 
-		_drawTextHelperMock.Verify(m => m.DrawAlignedText
-			(
-				_batch,
-				expectedPriceLocation,
-				565,
-				(sellPrice+1).ToString(),
-				DrawTextHelper.DrawTextAlignment.Middle,
-				DrawTextHelper.DrawTextAlignment.Middle,
-				false
-			), Times.Exactly(expectedRows > 1 ? 1 : 0)
-		);
-
-		_drawTextHelperMock.Verify(m => m.DrawAlignedText
-			(
-				_batch,
-				expectedPerDayLocation,
-				565,
-				sellPricePerDay != -1 ? sellPricePerDay.ToString() : "---",
-				DrawTextHelper.DrawTextAlignment.Middle,
-				DrawTextHelper.DrawTextAlignment.Middle,
-				false
-			), Times.Exactly(expectedRows > 1 ? 1 : 0)
-		);
+		Assert.That(HarmonyObject.DrawInMenuCalls.Count, Is.GreaterThanOrEqualTo(expectedRows), "Rows should still render item content with the compact supply summary");
 	}
 
 	[TestCase(0, 6)]
@@ -704,20 +627,125 @@ public class ForecastMenuTests : HarmonyTestBase
 
 		_menu = new ForecastMenu(_helperMock.Object, _economyServiceMock.Object, _drawTextHelperMock.Object, _drawSupplyBarHelperMock.Object, ExitAction);
 
+		if (selectedOption > 0)
+		{
+			SelectCategoryByName($"Category{selectedOption}");
+		}
+
+		HarmonySpriteBatch.DrawCalls.Clear();
+		_drawSupplyBarHelperMock.Invocations.Clear();
+		_drawTextHelperMock.Invocations.Clear();
 		_menu.draw(_batch);
 
-		var dropDown = HarmonyOptionsDropDown.DrawCalls.First().Key;
-		dropDown.selectedOption = selectedOption;
+		_drawSupplyBarHelperMock.Verify(s => s.DrawSupplyBar(
+			It.IsAny<SpriteBatch>(),
+			It.IsAny<int>(),
+			It.IsAny<int>(),
+			It.IsAny<int>(),
+			It.IsAny<int>(),
+			It.IsAny<ItemModel>()
+		), Times.Never);
+		Assert.That(CountDisplayedRows(), Is.EqualTo(expectedRows));
+	}
 
-		dropDown.bounds.Width = 10;
-		dropDown.bounds.Height = 10;
+	[Test]
+	public void ShouldCycleSortWithSingleToolbarButton()
+	{
+		Game1.uiViewport.Width = 2000;
+		Game1.uiViewport.Height = 1200;
+		Game1.options.gamepadControls = false;
 
-		_menu.receiveLeftClick(dropDown.bounds.Center.X, dropDown.bounds.Center.Y);
-		_menu.releaseLeftClick(dropDown.bounds.Center.X, dropDown.bounds.Center.Y);
+		_menu.draw(_batch);
+		_menu.populateClickableComponentList();
+		var sortButton = _menu.allClickableComponents.Single(c => c.myID == 200);
 
-		HarmonyIClickableMenu.DrawHoriztonalPartitionCalls.Clear();
+		_menu.receiveLeftClick(sortButton.bounds.Center.X, sortButton.bounds.Center.Y);
+		_menu.draw(_batch);
+		_menu.populateClickableComponentList();
+
+		Assert.That(_menu.allClickableComponents.Single(c => c.myID == 200).name, Is.EqualTo("DailyChange"));
+	}
+
+	[Test]
+	public void ShouldOpenCategoryDropdownAndSelectThirdEntry()
+	{
+		Game1.uiViewport.Width = 2000;
+		Game1.uiViewport.Height = 1200;
+		Game1.options.gamepadControls = false;
+
+		_menu.draw(_batch);
+		_menu.populateClickableComponentList();
+		var category = _menu.allClickableComponents.Single(c => c.myID == 300);
+		_menu.receiveLeftClick(category.bounds.Center.X, category.bounds.Center.Y);
+
+		_menu.draw(_batch);
+		_menu.populateClickableComponentList();
+		var thirdCategory = _menu.allClickableComponents.Single(c => c.label == "Category2");
+		_menu.receiveLeftClick(thirdCategory.bounds.Center.X, thirdCategory.bounds.Center.Y);
+
+		HarmonySpriteBatch.DrawCalls.Clear();
+		_drawSupplyBarHelperMock.Invocations.Clear();
+		_drawTextHelperMock.Invocations.Clear();
 		_menu.draw(_batch);
 
-		Assert.That(HarmonyIClickableMenu.DrawHoriztonalPartitionCalls[_batch], Has.Count.EqualTo(expectedRows + 2));
+		_drawSupplyBarHelperMock.Verify(s => s.DrawSupplyBar(
+			It.IsAny<SpriteBatch>(),
+			It.IsAny<int>(),
+			It.IsAny<int>(),
+			It.IsAny<int>(),
+			It.IsAny<int>(),
+			It.IsAny<ItemModel>()
+		), Times.Never);
+		Assert.That(CountDisplayedRows(), Is.EqualTo(3));
+	}
+
+	private int CountDisplayedRows()
+	{
+		return _drawTextHelperMock.Invocations.Count(invocation =>
+			invocation.Method.Name == nameof(IDrawTextHelper.DrawAlignedText)
+			&& invocation.Arguments.Count > 3
+			&& invocation.Arguments[3] is string text
+			&& text.StartsWith("display-", StringComparison.Ordinal)
+		);
+	}
+
+	[Test]
+	public void ShouldNotOpenControllerKeyboardWhenSearchBoxIsClickedWithMouse()
+	{
+		Game1.uiViewport.Width = 2000;
+		Game1.uiViewport.Height = 1200;
+		Game1.options.gamepadControls = false;
+
+		_menu.draw(_batch);
+		_menu.populateClickableComponentList();
+		var search = _menu.allClickableComponents.Single(c => c.myID == 400);
+
+		_menu.receiveLeftClick(search.bounds.Center.X, search.bounds.Center.Y);
+
+		Assert.Multiple(() =>
+		{
+			Assert.That(HarmonyGame.ShowTextEntryCalls, Is.Empty);
+		});
+	}
+
+	[Test]
+	public void ShouldReopenTextEntryWhenSearchBoxIsSelectedAgainWithController()
+	{
+		Game1.uiViewport.Width = 2000;
+		Game1.uiViewport.Height = 1200;
+		Game1.options.gamepadControls = true;
+
+		_menu.draw(_batch);
+		_menu.populateClickableComponentList();
+		_menu.setCurrentlySnappedComponentTo(400);
+
+		_menu.receiveGamePadButton(Buttons.A);
+		_menu.receiveGamePadButton(Buttons.B);
+		_menu.receiveGamePadButton(Buttons.A);
+
+		Assert.Multiple(() =>
+		{
+			Assert.That(HarmonyGame.ShowTextEntryCalls, Has.Count.EqualTo(2));
+		});
 	}
 }

@@ -111,11 +111,11 @@ namespace fse.core.patches
 				{
 					if (bounds.Width < vanillaBtnWidth)
 					{
-						DrawSupplyBarHelper.DrawSupplyBar(b, bounds.X + 96, component.bounds.Y + 20, bounds.Right - bounds.Width / 5, 30, model);
+						DrawSupplyBarHelper.DrawShopSupplyPreview(b, bounds.X + 96, component.bounds.Y + 27, model);
 					}
 					else
 					{
-						DrawSupplyBarHelper.DrawSupplyBar(b, bounds.Right - 400, component.bounds.Y + 20, bounds.Right - 200, 30, model);
+						DrawSupplyBarHelper.DrawShopSupplyPreview(b, bounds.Right - 400, component.bounds.Y + 27, model);
 					}
 				}
 			}

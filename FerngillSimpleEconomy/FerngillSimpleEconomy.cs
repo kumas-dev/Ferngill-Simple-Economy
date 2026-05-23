@@ -35,7 +35,7 @@ public class FerngillSimpleEconomy : Mod
 		var iconicFrameworkService = new IconicFrameworkService(helper, forecastMenuService);
 		var starControlService = new StarControlService(ModManifest, helper, forecastMenuService);
 		var genericConfigMenuService = new GenericConfigMenuService(helper, ModManifest, economyService, contentPackService);
-		var tooltipMenu = new TooltipMenu(helper, economyService, drawSupplyBarHelper, betterGameMenuService);
+		var tooltipMenu = new TooltipMenu(economyService, betterGameMenuService);
 		RegisterPatches(economyService, drawSupplyBarHelper);
 		RegisterHandlers(
 			helper, 

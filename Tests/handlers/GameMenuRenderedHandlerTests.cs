@@ -103,6 +103,17 @@ public class GameMenuRenderedHandlerTests : HarmonyTestBase
 		
 		Assert.That(Game1.activeClickableMenu, Is.EqualTo(_mockForecastMenu.Object));
 	}
+
+	[Test]
+	public void ShouldCreateForecastMenuWithControllerWhenLastTabIsSelected()
+	{
+		_gameMenu.pages.Add(new ExitPage(0, 0, 0, 0));
+		_gameMenu.currentTab = _gameMenu.pages.Count - 1;
+
+		_mockInputEvents.InvokeButtonPressed(HarmonyButtonPressedEventArgs.CreateButtonPressedEventArgs(SButton.DPadRight, _mockCursor.Object));
+
+		Assert.That(Game1.activeClickableMenu, Is.EqualTo(_mockForecastMenu.Object));
+	}
 	
 	[Test]
 	public void ShouldNotCreateForecastMenuWhenNotInGameMenu()

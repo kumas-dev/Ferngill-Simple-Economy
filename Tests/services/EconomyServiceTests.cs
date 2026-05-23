@@ -111,6 +111,23 @@ public class EconomyServiceTests : HarmonyTestBase
 	}
 
 	[Test]
+	public void ShouldGroupUnnamedCategoriesAsOther()
+	{
+		HarmonyObject.ObjectIdCategoryMapping["6"] = 3;
+		HarmonyObject.CategoryIdToNameMapping[3] = string.Empty;
+		var model = new EconomyModel(new Dictionary<int, Dictionary<string, ItemModel>>
+		{
+			{ 3, new Dictionary<string, ItemModel> { { "6", new ItemModel("6") } } },
+		});
+
+		_economyService.ReceiveEconomy(model);
+
+		var categories = _economyService.GetCategories();
+
+		Assert.That(categories[3], Is.EqualTo("Other"));
+	}
+
+	[Test]
 	public void ShouldGenerateNewEconomyOnLoadIfEmpty([Values] bool hasAddContent)
 	{
 		if (!hasAddContent)

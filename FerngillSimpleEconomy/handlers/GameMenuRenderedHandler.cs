@@ -88,14 +88,13 @@ public class GameMenuLoadedHandler : IHandler
 
 				break;
 			}
-			// TODO: these do not work
 			case SButton.LeftThumbstickRight:
 			case SButton.DPadRight:
 			{
-				if (gameMenu.tabs[^1].bounds.Contains(buttonPressedEventArgs.Cursor.GetUiScaledPosition()))
+				if (gameMenu.currentTab == gameMenu.pages.Count - 1)
 				{
-					var element = Tab;
-					Mouse.SetPosition(element.bounds.X + element.bounds.Width / 2, element.bounds.Y + element.bounds.Height / 2);
+					var controllerForecastMenu = _forecastMenuService.CreateMenu(() => ReleaseMenuTab(gameMenu));
+					TakeOverMenuTab(gameMenu, controllerForecastMenu);
 				}
 
 				return;
@@ -103,12 +102,6 @@ public class GameMenuLoadedHandler : IHandler
 			case SButton.LeftThumbstickLeft:
 			case SButton.DPadLeft:
 			{
-				if (Tab.bounds.Contains(buttonPressedEventArgs.Cursor.GetUiScaledPosition()))
-				{
-					var element = gameMenu.tabs[^1];
-					Mouse.SetPosition(element.bounds.X + element.bounds.Width / 2, element.bounds.Y + element.bounds.Height / 2);
-				}
-
 				return;
 			}
 			default:
@@ -167,6 +160,7 @@ public class GameMenuLoadedHandler : IHandler
 			offset += 70;
 		}
 
+		Tab.label = _helper.Translation.Get("fse.forecast.menu.tab.title");
 		Tab.bounds = new Rectangle(
 			gameMenu.xPositionOnScreen + (64 * 11) + offset,
 			gameMenu.yPositionOnScreen + IClickableMenu.tabYPositionRelativeToMenuY + 64,

@@ -48,6 +48,14 @@ public static class HarmonyGame
 			prefix: new HarmonyMethod(typeof(HarmonyGame), nameof(MockPlaySound))
 		);
 		harmony.Patch(
+			AccessTools.Method(typeof(Game1), nameof(Game1.showTextEntry), new[] { typeof(TextBox) }),
+			prefix: new HarmonyMethod(typeof(HarmonyGame), nameof(MockShowTextEntry))
+		);
+		harmony.Patch(
+			AccessTools.Method(typeof(Game1), nameof(Game1.closeTextEntry), Type.EmptyTypes),
+			prefix: new HarmonyMethod(typeof(HarmonyGame), nameof(MockCloseTextEntry))
+		);
+		harmony.Patch(
 			AccessTools.Method(
 				typeof(Game1), 
 				nameof(Game1.drawDialogueBox), 
@@ -70,6 +78,8 @@ public static class HarmonyGame
 			prefix: new HarmonyMethod(typeof(HarmonyGame), nameof(MockDrawDialogueBox))
 		);
 		DrawDialogueBoxCalls.Clear();
+		ShowTextEntryCalls.Clear();
+		CloseTextEntryCalls = 0;
 	}
 	
 	public static void TearDown()
@@ -81,6 +91,8 @@ public static class HarmonyGame
 		GetActiveClickableMenuResult = null;
 		GetOptionsResult = null;
 		DrawDialogueBoxCalls.Clear();
+		ShowTextEntryCalls.Clear();
+		CloseTextEntryCalls = 0;
 	}
 
 	public static Farmer GetPlayerResult { get; set; }
@@ -133,6 +145,8 @@ public static class HarmonyGame
 
 	public static List<(int x, int y, int width, int height, bool speaker, bool drawOnlyBox)>
 		DrawDialogueBoxCalls { get; } = [];
+	public static List<TextBox> ShowTextEntryCalls { get; } = [];
+	public static int CloseTextEntryCalls { get; private set; }
 
 	static bool MockDrawDialogueBox
 	(
@@ -156,6 +170,18 @@ public static class HarmonyGame
 	
 	static bool MockPlaySound(string cueName)
 	{
+		return false;
+	}
+
+	static bool MockShowTextEntry(TextBox __0)
+	{
+		ShowTextEntryCalls.Add(__0);
+		return false;
+	}
+
+	static bool MockCloseTextEntry()
+	{
+		CloseTextEntryCalls++;
 		return false;
 	}
 }

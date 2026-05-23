@@ -35,8 +35,8 @@ public class StarControlService(
 	
 	private class StarControlItem(IModHelper helper, IForecastMenuService forecastMenuService) : IRadialMenuItem {
 		public string Id { get; } = $"{helper.ModContent.ModID}.starmenu";
-		public string Title { get; } = helper.Translation.Get("fse.forecast.menu.tab.title");
-		public string Description { get; } = helper.Translation.Get("fse.config.hotkey.openMenu");
+		public string Title => helper.Translation.Get("fse.forecast.menu.tab.title");
+		public string Description => helper.Translation.Get("fse.config.hotkey.openMenu");
 		public Texture2D? Texture { get; } = helper.ModContent.Load<Texture2D>("assets/stock-menu.png");
 
 		public ItemActivationResult Activate(Farmer who, DelayedActions delayedActions, ItemActivationType activationType = ItemActivationType.Primary)
